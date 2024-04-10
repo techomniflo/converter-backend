@@ -42,7 +42,7 @@ def manage_folder_size():
             logger.info(f"Deleted {oldest_file} to reduce folder size.")
         logger.info("Folder size managed successfully.")
 
-@app.post("/pdf2png")
+@app.post("/emf2png")
 async def pdf_to_png(file: UploadFile = File(...)):
     manage_folder_size()  # Ensure folder size is managed before processing new file
     original_name = os.path.splitext(file.filename)[0]
