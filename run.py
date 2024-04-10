@@ -42,11 +42,40 @@ def manage_folder_size():
             logger.info(f"Deleted {oldest_file} to reduce folder size.")
         logger.info("Folder size managed successfully.")
 
-@app.post("/emf2png")
-async def emf_to_png(file: UploadFile = File(...)):
+@app.post("/pdf2png")
+async def pdf_to_png(file: UploadFile = File(...)):
     manage_folder_size()  # Ensure folder size is managed before processing new file
     original_name = os.path.splitext(file.filename)[0]
     temp_file = f"{uuid.uuid4()}.emf"
+    with open(temp_file, "wb") as f:
+        f.write(await file.read())
+        logger.info(f"Temporarily saved file: {temp_file}")
+    output_file = os.path.join(results_folder, f"{original_name}.png")
+    convert_file(temp_file, output_file)
+    os.remove(temp_file)
+    logger.info(f"Deleted temporary file: {temp_file}")
+    return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
+
+
+@app.post("/pdf2png")
+async def pdf_to_png(file: UploadFile = File(...)):
+    manage_folder_size()  # Ensure folder size is managed before processing new file
+    original_name = os.path.splitext(file.filename)[0]
+    temp_file = f"{uuid.uuid4()}.pdf"
+    with open(temp_file, "wb") as f:
+        f.write(await file.read())
+        logger.info(f"Temporarily saved file: {temp_file}")
+    output_file = os.path.join(results_folder, f"{original_name}.png")
+    convert_file(temp_file, output_file)
+    os.remove(temp_file)
+    logger.info(f"Deleted temporary file: {temp_file}")
+    return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
+
+@app.post("/xps2png")
+async def xps_to_png(file: UploadFile = File(...)):
+    manage_folder_size()  # Ensure folder size is managed before processing new file
+    original_name = os.path.splitext(file.filename)[0]
+    temp_file = f"{uuid.uuid4()}.xps"
     with open(temp_file, "wb") as f:
         f.write(await file.read())
         logger.info(f"Temporarily saved file: {temp_file}")
