@@ -1,0 +1,30 @@
+
+
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Deploy to server
+      uses: appleboy/ssh-action@master
+      with:
+        host: converter.beaglenetwork.com
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /home/ubuntu/converter-backend
+          git pull
+          source venv/bin/activate
+          pip install -r requirements.txt
+          sudo supervisorctl stop converter
+          sudo supervisorctl start converter

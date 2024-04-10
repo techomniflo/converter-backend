@@ -72,3 +72,7 @@ async def pdf_to_png(file: UploadFile = File(...)):
 
     # Return the converted PNG file
     return FileResponse(output_file, media_type="image/png", filename=output_file)
+
+    @app.get("/heartbeat")
+    async def heartbeat():
+        return {"status": "up"}
