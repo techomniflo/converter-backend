@@ -15,6 +15,17 @@ os.makedirs(results_folder, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Function to convert file using escpos-tools
+def convert_escpos_file(input_file, output_dir):
+    try:
+        subprocess.run(["docker", "run", "--rm", "-v", f"{os.path.dirname(input_file)}:/data", "escpos-tools",
+                        "escimages.php", "--file", f"/data/{os.path.basename(input_file)}",
+                        "--png", "--output-dir", f"/data/{output_dir}"], check=True)
+        logger.info(f"Conversion successful: {input_file} to {output_dir}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Conversion failed: {e}")
+        raise Exception(f"Conversion failed: {e}")
+
 # Function to convert file using ImageMagick's convert command
 def convert_file(input_file, output_file):
     try:
@@ -85,7 +96,38 @@ async def xps_to_png(file: UploadFile = File(...)):
     logger.info(f"Deleted temporary file: {temp_file}")
     return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
 
-# Implement similar manage_folder_size() call in other endpoint functions
+# Function to append images vertically
+def append_images_vertically(image_files, output_file):
+    try:
+        subprocess.run(["convert", "-append"] + image_files + [output_file], check=True)
+        logger.info(f"Images appended vertically: {image_files} to {output_file}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Image append failed: {e}")
+        raise Exception(f"Image append failed: {e}")
+
+@app.post("/escpos2png")
+async def escpos_to_png(file: UploadFile = File(...)):
+    manage_folder_size()  # Ensure folder size is managed before processing new file
+    original_name = os.path.splitext(file.filename)[0]
+    temp_file = f"{uuid.uuid4()}.bin"
+    with open(temp_file, "wb") as f:
+        f.write(await file.read())
+    logger.info(f"Temporarily saved file: {temp_file}")
+
+    output_dir = os.path.join(results_folder, original_name)
+    os.makedirs(output_dir, exist_ok=True)
+    convert_escpos_file(temp_file, output_dir)
+    os.remove(temp_file)
+    logger.info(f"Deleted temporary file: {temp_file}")
+
+    output_files = sorted(Path(output_dir).glob("*.png"))
+    if len(output_files) > 1:
+        output_file = os.path.join(results_folder, f"{original_name}.png")
+        append_images_vertically([str(f) for f in output_files], output_file)
+    else:
+        output_file = output_files[0]
+
+    return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
 
 @app.get("/heartbeat")
 async def heartbeat():
