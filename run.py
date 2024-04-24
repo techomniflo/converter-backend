@@ -6,10 +6,12 @@ import subprocess
 import logging
 from pathlib import Path
 
+from spl_to_emf import save_emf_records
 app = FastAPI()
 
-results_folder = "results"
+input_folder,results_folder = "input","results"
 os.makedirs(results_folder, exist_ok=True)
+os.makedirs(input_folder,exist_ok=True)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,11 +31,30 @@ def convert_escpos_file(input_file, output_dir):
 # Function to convert file using ImageMagick's convert command
 def convert_file(input_file, output_file):
     try:
-        subprocess.run(["convert", input_file, output_file], check=True)
+        subprocess.run(["convert","-density","300", input_file, "-append",output_file], check=True)
         logger.info(f"Conversion successful: {input_file} to {output_file}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Conversion failed: {e}")
         raise Exception(f"Conversion failed: {e}")
+def run_command(command):
+    try:
+        subprocess.run(command, check=True)
+        # logger.info(f"Conversion successful: {input_file} to {output_file}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Conversion failed: {e}")
+        raise Exception(f"Conversion failed: {e}")
+
+def remove_file_from_list(files):
+    for file_path in files:
+        try:
+            # Attempt to remove the file
+            os.remove(file_path)
+            logger.error(f"File '{file_path}' removed successfully.")
+        except OSError as e:
+            # If an error occurs (e.g., file not found), print the error message
+            logger.error(f"Error: {file_path} : {e.strerror}")
+
+
 
 # Function to check and manage the results folder size
 def manage_folder_size():
@@ -54,7 +75,7 @@ def manage_folder_size():
         logger.info("Folder size managed successfully.")
 
 @app.post("/emf2png")
-async def pdf_to_png(file: UploadFile = File(...)):
+async def emf_to_png(file: UploadFile = File(...)):
     manage_folder_size()  # Ensure folder size is managed before processing new file
     original_name = os.path.splitext(file.filename)[0]
     temp_file = f"{uuid.uuid4()}.emf"
@@ -67,6 +88,23 @@ async def pdf_to_png(file: UploadFile = File(...)):
     logger.info(f"Deleted temporary file: {temp_file}")
     return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
 
+@app.post("/spl2png")
+async def spl_to_png(file: UploadFile = File(...)):
+    manage_folder_size()  # Ensure folder size is managed before processing new file
+    original_name = os.path.splitext(file.filename)[0]
+    temp_uuid=uuid.uuid4()
+    temp_file = f"{temp_uuid}.emf"
+    with open(temp_file, "wb") as f:
+        f.write(await file.read())
+        logger.info(f"Temporarily saved file: {temp_file}")
+    output_file = os.path.join(results_folder, f"{temp_uuid}.png")
+    emf_files_count=save_emf_records(temp_file,input_folder)
+    input_emf_file=[os.path.join(input_folder,temp_file[:-4] + "_" + str(i)+".emf")for i in range(emf_files_count)]
+    command=["wine","ImageMagick-7.1.1-29-portable-Q16-HDRI-x86/convert.exe","-density","300"] + input_emf_file +  ["-append",output_file]
+    run_command(command=command)
+    remove_file_from_list(input_emf_file+[temp_file])
+    logger.info(f"Deleted temporary file: {temp_file}")
+    return FileResponse(output_file, media_type="image/png", filename=os.path.basename(f"{original_name}.png"))
 
 @app.post("/pdf2png")
 async def pdf_to_png(file: UploadFile = File(...)):
