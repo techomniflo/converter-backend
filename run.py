@@ -100,7 +100,7 @@ async def spl_to_png(file: UploadFile = File(...)):
     output_file = os.path.join(results_folder, f"{temp_uuid}.png")
     emf_files_count=save_emf_records(temp_file,input_folder)
     input_emf_file=[os.path.join(input_folder,temp_file[:-4] + "_" + str(i)+".emf")for i in range(emf_files_count)]
-    command=["wine","ImageMagick-7.1.1-29-portable-Q16-HDRI-x86/convert.exe","-density","300"] + input_emf_file +  ["-append",output_file]
+    command=["wine","ImageMagick-7.1.1-31-portable-Q16-HDRI-x86/convert.exe","-density","300"] + input_emf_file +  ["-append",output_file]
     run_command(command=command)
     remove_file_from_list(input_emf_file+[temp_file])
     logger.info(f"Deleted temporary file: {temp_file}")
