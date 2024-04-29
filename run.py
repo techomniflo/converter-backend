@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile,HTTPException
 from fastapi.responses import FileResponse
 import os
 import uuid
@@ -39,10 +39,10 @@ def convert_file(input_file, output_file):
 def run_command(command):
     try:
         subprocess.run(command, check=True)
-        # logger.info(f"Conversion successful: {input_file} to {output_file}")
+        logger.info(f"commnad successful: {str(command)}")
     except subprocess.CalledProcessError as e:
-        logger.error(f"Conversion failed: {e}")
-        raise Exception(f"Conversion failed: {e}")
+        logger.error(f"command failed: {e}")
+        raise Exception(f"command failed: {e}")
 
 def remove_file_from_list(files):
     for file_path in files:
@@ -122,17 +122,72 @@ async def pdf_to_png(file: UploadFile = File(...)):
 
 @app.post("/xps2png")
 async def xps_to_png(file: UploadFile = File(...)):
-    manage_folder_size()  # Ensure folder size is managed before processing new file
-    original_name = os.path.splitext(file.filename)[0]
-    temp_file = f"{uuid.uuid4()}.xps"
+    # Manage folder size
+    manage_folder_size()
+
+    # Generate temporary UUID for file
+    temp_uuid = uuid.uuid4()
+
+    # Save uploaded XPS file temporarily
+    temp_file = os.path.join(input_folder, f"{temp_uuid}.xps")
     with open(temp_file, "wb") as f:
         f.write(await file.read())
-        logger.info(f"Temporarily saved file: {temp_file}")
-    output_file = os.path.join(results_folder, f"{original_name}.png")
-    convert_file(temp_file, output_file)
+    logger.info(f"Temporarily saved file: {temp_file}")
+
+    # Convert XPS to PNG
+    output_file = os.path.join(results_folder, str(temp_uuid))
+    xpstopng_command = ["xpstopng", temp_file, output_file]
+    run_command(command=xpstopng_command)
+
+    # Vertically append all PNG files into one
+    all_input_files = os.path.join(results_folder, f"{temp_uuid}-*.png")
+    output_file += ".png"
+    convert_command = ["convert", "-density", "300", all_input_files, "-append", output_file]
+    run_command(command=convert_command)
+
+    # Clean up temporary XPS file
     os.remove(temp_file)
     logger.info(f"Deleted temporary file: {temp_file}")
-    return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
+
+    # Return PNG file
+    original_name = os.path.splitext(file.filename)[0]
+    return FileResponse(output_file, media_type="image/png", filename=os.path.basename(original_name))
+
+
+@app.post("/pdf2txt")
+@app.post("/xps2txt")
+async def extract_text_from_xps_pdf(file: UploadFile = File(...)):
+
+    # Check file extension
+    allowed_extensions = {"pdf", "xps"}
+    file_extension = file.filename.split(".")[-1]
+    if file_extension.lower() not in allowed_extensions:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Only PDF and XPS are supported.")
+    
+    # Manage folder size
+    manage_folder_size()
+
+    # Generate temporary UUID for file
+    temp_uuid = uuid.uuid4()
+
+    # Save uploaded file temporarily
+    temp_file = os.path.join(input_folder, f"{temp_uuid}.{file_extension}")
+    with open(temp_file, "wb") as f:
+        f.write(await file.read())
+    logger.info(f"Temporarily saved file: {temp_file}")
+
+    # Convert XPS to PNG
+    output_file_path = os.path.join(results_folder, f"{temp_uuid}.txt")
+    command = ["mutool", "draw", "-F", "txt", temp_file]
+    try:
+        with open(output_file_path, 'w') as output_file:
+            subprocess.call(command, stdout=output_file)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"command failed: {e}")
+        raise Exception(f"command failed: {e}")
+    
+    original_name = os.path.splitext(file.filename)[0]
+    return FileResponse(output_file_path, media_type="text/plain", filename=os.path.basename(original_name))
 
 # Function to append images vertically
 def append_images_vertically(image_files, output_file):
