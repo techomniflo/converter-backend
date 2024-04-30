@@ -154,8 +154,8 @@ async def xps_to_png(file: UploadFile = File(...)):
     return FileResponse(output_file, media_type="image/png", filename=os.path.basename(original_name))
 
 
-@app.post("/pdf2txt")
-@app.post("/xps2txt")
+@app.get("/pdf2txt")
+@app.get("/xps2txt")
 async def extract_text_from_xps_pdf(file: UploadFile = File(...)):
 
     # Check file extension
