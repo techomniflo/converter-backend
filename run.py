@@ -49,7 +49,7 @@ def remove_file_from_list(files):
         try:
             # Attempt to remove the file
             os.remove(file_path)
-            logger.error(f"File '{file_path}' removed successfully.")
+            logger.info(f"File '{file_path}' removed successfully.")
         except OSError as e:
             # If an error occurs (e.g., file not found), print the error message
             logger.error(f"Error: {file_path} : {e.strerror}")
