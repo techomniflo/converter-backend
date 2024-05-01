@@ -4,6 +4,7 @@ import os
 import uuid
 import subprocess
 import logging
+import asyncio
 from pathlib import Path
 
 from spl_to_emf import save_emf_records
@@ -17,6 +18,23 @@ os.makedirs(input_folder,exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Asynchronous function to run subprocess commands
+async def run_command_async(command):
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+        if process.returncode != 0:
+            logger.error(f"Command failed: {stderr.decode()}")
+            raise Exception(f"Command failed: {stderr.decode()}")
+        logger.info(f"Command successful: {stdout.decode()}")
+    except asyncio.TimeoutError:
+        logger.error("Command timed out")
+        process.kill()
+        await process.communicate()
+        raise Exception("Command timed out")
+
 # Function to convert file using escpos-tools
 def convert_escpos_file(input_file, output_dir):
     try:
@@ -29,20 +47,11 @@ def convert_escpos_file(input_file, output_dir):
         raise Exception(f"Conversion failed: {e}")
 
 # Function to convert file using ImageMagick's convert command
-def convert_file(input_file, output_file):
-    try:
-        subprocess.run(["convert","-density","300", input_file, "-append",output_file], check=True)
-        logger.info(f"Conversion successful: {input_file} to {output_file}")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Conversion failed: {e}")
-        raise Exception(f"Conversion failed: {e}")
-def run_command(command):
-    try:
-        subprocess.run(command, check=True)
-        logger.info(f"commnad successful: {str(command)}")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"command failed: {e}")
-        raise Exception(f"command failed: {e}")
+async def convert_file(input_file, output_file):
+    convert_file_command = ["convert","-density","300", input_file, "-append",output_file]
+    await run_command_async(command=convert_file_command)
+    logger.info(f"Conversion successful: {input_file} to {output_file}")
+
 
 def remove_file_from_list(files):
     for file_path in files:
@@ -101,7 +110,7 @@ async def spl_to_png(file: UploadFile = File(...)):
     emf_files_count=save_emf_records(temp_file,input_folder)
     input_emf_file=[os.path.join(input_folder,temp_file[:-4] + "_" + str(i)+".emf")for i in range(emf_files_count)]
     command=["wine","ImageMagick-7.1.1-31-portable-Q16-HDRI-x86/convert.exe","-density","300"] + input_emf_file +  ["-append",output_file]
-    run_command(command=command)
+    await run_command_async(command=command)
     remove_file_from_list(input_emf_file+[temp_file])
     logger.info(f"Deleted temporary file: {temp_file}")
     return FileResponse(output_file, media_type="image/png", filename=os.path.basename(f"{original_name}.png"))
@@ -137,13 +146,13 @@ async def xps_to_png(file: UploadFile = File(...)):
     # Convert XPS to PNG
     output_file = os.path.join(results_folder, str(temp_uuid))
     xpstopng_command = ["xpstopng", temp_file, output_file]
-    run_command(command=xpstopng_command)
+    await run_command_async(command=xpstopng_command)
 
     # Vertically append all PNG files into one
     all_input_files = os.path.join(results_folder, f"{temp_uuid}-*.png")
     output_file += ".png"
     convert_command = ["convert", "-density", "300", all_input_files, "-append", output_file]
-    run_command(command=convert_command)
+    await run_command_async(command=convert_command)
 
     # Clean up temporary XPS file
     os.remove(temp_file)
@@ -178,21 +187,18 @@ async def extract_text_from_xps_pdf(file: UploadFile = File(...)):
 
     # Convert XPS to PNG
     output_file_path = os.path.join(results_folder, f"{temp_uuid}.txt")
-    command = ["mutool", "draw", "-F", "txt", temp_file]
-    try:
-        with open(output_file_path, 'w') as output_file:
-            subprocess.call(command, stdout=output_file)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"command failed: {e}")
-        raise Exception(f"command failed: {e}")
+    commandXps2Png = ["mutool", "draw", "-F", "txt", temp_file]
+    with open(output_file_path, 'w') as output_file:
+        await run_command_async(command=commandXps2Png)
+   
     
     original_name = os.path.splitext(file.filename)[0]
     return FileResponse(output_file_path, media_type="text/plain", filename=os.path.basename(original_name))
 
 # Function to append images vertically
-def append_images_vertically(image_files, output_file):
+async def append_images_vertically(image_files, output_file):
     try:
-        subprocess.run(["convert", "-append"] + image_files + [output_file], check=True)
+        await run_command_async(command=["convert", "-append"] + image_files + [output_file])
         logger.info(f"Images appended vertically: {image_files} to {output_file}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Image append failed: {e}")
