@@ -15,7 +15,7 @@ os.makedirs(results_folder, exist_ok=True)
 os.makedirs(input_folder,exist_ok=True)
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='server.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Asynchronous function to run subprocess commands
