@@ -5,6 +5,7 @@ import uuid
 import subprocess
 import logging
 import asyncio
+import aiofiles
 from pathlib import Path
 
 from spl_to_emf import save_emf_records
@@ -34,6 +35,14 @@ async def run_command_async(command):
         process.kill()
         await process.communicate()
         raise Exception("Command timed out")
+    
+async def save_uploaded_file(file: UploadFile, temp_uuid: str, file_extension: str) -> str:
+    temp_file_path = os.path.join(input_folder, f"{temp_uuid}.{file_extension}")
+    async with aiofiles.open(temp_file_path, "wb") as f:
+        contents = await file.read()
+        await f.write(contents)
+    logger.info(f"Temporarily saved file: {temp_file_path}")
+    return temp_file_path
 
 # Function to convert file using escpos-tools
 def convert_escpos_file(input_file, output_dir):
@@ -92,7 +101,7 @@ async def emf_to_png(file: UploadFile = File(...)):
         f.write(await file.read())
         logger.info(f"Temporarily saved file: {temp_file}")
     output_file = os.path.join(results_folder, f"{original_name}.png")
-    convert_file(temp_file, output_file)
+    await convert_file(temp_file, output_file)
     os.remove(temp_file)
     logger.info(f"Deleted temporary file: {temp_file}")
     return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
@@ -124,7 +133,7 @@ async def pdf_to_png(file: UploadFile = File(...)):
         f.write(await file.read())
         logger.info(f"Temporarily saved file: {temp_file}")
     output_file = os.path.join(results_folder, f"{original_name}.png")
-    convert_file(temp_file, output_file)
+    await convert_file(temp_file, output_file)
     os.remove(temp_file)
     logger.info(f"Deleted temporary file: {temp_file}")
     return FileResponse(output_file, media_type="image/png", filename=os.path.basename(output_file))
@@ -163,8 +172,8 @@ async def xps_to_png(file: UploadFile = File(...)):
     return FileResponse(output_file, media_type="image/png", filename=os.path.basename(original_name))
 
 
-@app.get("/pdf2txt")
-@app.get("/xps2txt")
+@app.post("/pdf2txt")
+@app.post("/xps2txt")
 async def extract_text_from_xps_pdf(file: UploadFile = File(...)):
 
     # Check file extension
@@ -187,11 +196,14 @@ async def extract_text_from_xps_pdf(file: UploadFile = File(...)):
 
     # Convert XPS to PNG
     output_file_path = os.path.join(results_folder, f"{temp_uuid}.txt")
-    commandXps2Png = ["mutool", "draw", "-F", "txt", temp_file]
-    with open(output_file_path, 'w') as output_file:
-        await run_command_async(command=commandXps2Png)
-   
-    
+    command = ["mutool", "draw", "-F", "txt", temp_file]
+    try:
+        with open(output_file_path, 'w') as output_file:
+            subprocess.call(command, stdout=output_file)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"command failed: {e}")
+        raise Exception(f"command failed: {e}")
+    os.remove(temp_file)
     original_name = os.path.splitext(file.filename)[0]
     return FileResponse(output_file_path, media_type="text/plain", filename=os.path.basename(original_name))
 
@@ -222,7 +234,7 @@ async def escpos_to_png(file: UploadFile = File(...)):
     output_files = sorted(Path(output_dir).glob("*.png"))
     if len(output_files) > 1:
         output_file = os.path.join(results_folder, f"{original_name}.png")
-        append_images_vertically([str(f) for f in output_files], output_file)
+        await append_images_vertically([str(f) for f in output_files], output_file)
     else:
         output_file = output_files[0]
 
@@ -232,3 +244,30 @@ async def escpos_to_png(file: UploadFile = File(...)):
 async def heartbeat():
     logger.info("Heartbeat checked. Service is up.")
     return {"status": "up"}
+
+@app.post("/emfspool_to_png")
+async def emfspool_png(file: UploadFile = File(...)):
+    manage_folder_size()  # Ensure folder size is managed before processing new file
+    original_name = os.path.splitext(file.filename)[0]
+    temp_uuid=str(uuid.uuid4())
+
+    temp_file_path = await save_uploaded_file(file,temp_uuid,"SPL")
+
+    emf_files_count=save_emf_records(temp_file_path,input_folder)
+
+    all_svg_file_path=[]
+    to_remove_files=[temp_file_path]
+    for i in range(emf_files_count):
+        emf_file_path=os.path.join(input_folder,f"{temp_uuid}_{i}.emf")
+        svg_file_path=os.path.join(input_folder,f"{temp_uuid}_{i}.svg")
+        to_remove_files.append(emf_file_path)
+        to_remove_files.append(svg_file_path)
+        all_svg_file_path.append(svg_file_path)
+        command=["emf2svg-conv","-i",emf_file_path,"-o",svg_file_path]
+        await run_command_async(command=command)
+    
+    output_file_path=os.path.join(results_folder,f"{temp_uuid}.png")
+    command=["convert","-density","300"]+all_svg_file_path+["-append",output_file_path]
+    await run_command_async(command)
+    remove_file_from_list(to_remove_files)
+    return FileResponse(output_file_path, media_type="image/png", filename=os.path.basename(original_name))
