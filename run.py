@@ -265,8 +265,8 @@ async def emfspool_png(file: UploadFile = File(...)):
         to_remove_files.append(emf_file_path)
         to_remove_files.append(svg_file_path)
         all_svg_file_path.append(svg_file_path)
+        logging.info(f"run command to convert emf to svg  {command}")
         command=["emf2svg-conv","-i",emf_file_path,"-o",svg_file_path]
-        logging.info("run command",str(command))
         logger.debug(f"Converting EMF file to SVG: {emf_file_path} -> {svg_file_path}")
         await run_command_async(command=command)
     
