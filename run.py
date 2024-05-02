@@ -252,8 +252,10 @@ async def emfspool_png(file: UploadFile = File(...)):
     temp_uuid=str(uuid.uuid4())
 
     temp_file_path = await save_uploaded_file(file,temp_uuid,"SPL")
+    logger.debug(f"Saved uploaded file to temp location: {temp_file_path}")
 
     emf_files_count=save_emf_records(temp_file_path,input_folder)
+    logger.debug(f"Number of EMF files saved: {emf_files_count}")
 
     all_svg_file_path=[]
     to_remove_files=[temp_file_path]
@@ -264,10 +266,14 @@ async def emfspool_png(file: UploadFile = File(...)):
         to_remove_files.append(svg_file_path)
         all_svg_file_path.append(svg_file_path)
         command=["emf2svg-conv","-i",emf_file_path,"-o",svg_file_path]
+        logging.info("run command",str(command))
+        logger.debug(f"Converting EMF file to SVG: {emf_file_path} -> {svg_file_path}")
         await run_command_async(command=command)
     
     output_file_path=os.path.join(results_folder,f"{temp_uuid}.png")
     command=["convert","-density","300"]+all_svg_file_path+["-append",output_file_path]
+    logging.debug("command for convert svg to png {command}")
     await run_command_async(command)
+    logger.debug(f"Generating PNG file from SVG files: {all_svg_file_path} -> {output_file_path}")
     remove_file_from_list(to_remove_files)
     return FileResponse(output_file_path, media_type="image/png", filename=os.path.basename(original_name))
